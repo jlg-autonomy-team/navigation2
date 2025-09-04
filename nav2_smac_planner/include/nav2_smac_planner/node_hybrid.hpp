@@ -24,6 +24,8 @@
 #include <memory>
 #include <utility>
 #include <limits>
+#include <thread>
+#include <future>
 
 #include "ompl/base/StateSpace.h"
 

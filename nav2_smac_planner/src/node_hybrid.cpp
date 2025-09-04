@@ -638,7 +638,6 @@ void NodeHybrid::precomputeDistanceHeuristic(
   size_lookup = lookup_table_dim;
   float motion_heuristic = 0.0;
   unsigned int index = 0;
-  int dim_3_size_int = static_cast<int>(dim_3_size);
   float angular_bin_size = 2 * M_PI / static_cast<float>(dim_3_size);
 
   // Create a lookup table of Dubin/Reeds-Shepp distances in a window around the goal
@@ -646,18 +645,55 @@ void NodeHybrid::precomputeDistanceHeuristic(
   // Heuristic space, we need to only store 2 of the 4 quadrants and simply mirror
   // around the X axis any relative node lookup. This reduces memory overhead and increases
   // the size of a window a platform can store in memory.
-  dist_heuristic_lookup_table.resize(size_lookup * ceil(size_lookup / 2.0) * dim_3_size_int);
-  for (float x = ceil(-size_lookup / 2.0); x <= floor(size_lookup / 2.0); x += 1.0) {
-    for (float y = 0.0; y <= floor(size_lookup / 2.0); y += 1.0) {
-      for (int heading = 0; heading != dim_3_size_int; heading++) {
-        from[0] = x;
-        from[1] = y;
-        from[2] = heading * angular_bin_size;
-        motion_heuristic = motion_table.state_space->distance(from(), to());
-        dist_heuristic_lookup_table[index] = motion_heuristic;
-        index++;
+  size_lookup = lookup_table_dim;
+  int size_x = static_cast<int>(size_lookup);
+  int size_y = static_cast<int>(std::ceil(size_lookup / 2.0f));
+  int size_theta = static_cast<int>(dim_3_size);
+
+  dist_heuristic_lookup_table.resize(size_x * size_y * size_theta);
+
+  auto compute = [&](int heading_start, int heading_end) {
+    ompl::base::ScopedState<> local_from(motion_table.state_space);
+    ompl::base::ScopedState<> local_to(motion_table.state_space);
+    
+    local_to[0] = 0.0;
+    local_to[1] = 0.0;
+    local_to[2] = 0.0;
+    
+    for (int h = heading_start; h < heading_end; ++h) {
+      for (int y = 0; y < size_y; ++y) {
+        for (int x = 0; x < size_x; ++x) {
+          float fx = static_cast<float>(x) - std::floor(size_lookup / 2.0f);
+          float fy = static_cast<float>(y);
+          float theta = h * angular_bin_size;
+
+          local_from[0] = fx;
+          local_from[1] = fy;
+          local_from[2] = theta;
+
+          float dist = motion_table.state_space->distance(local_from(), local_to());
+          
+          size_t index = static_cast<size_t>(x * size_y * size_theta + y * size_theta + h);
+          dist_heuristic_lookup_table[index] = dist;
+        }
       }
     }
+  };
+
+  // launch threads
+  int num_threads = std::thread::hardware_concurrency();
+  std::vector<std::future<void>> futures;
+  int headings_per_thread = std::ceil(static_cast<float>(size_theta) / num_threads);
+
+  for (int i = 0; i < num_threads; ++i) {
+    int start = i * headings_per_thread;
+    int end = std::min(size_theta, (i + 1) * headings_per_thread);
+    futures.push_back(std::async(std::launch::async, compute, start, end));
+  }
+
+  // wait for threads to complete
+  for (auto &f : futures) {
+    f.get();
   }
 }
 
