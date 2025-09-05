@@ -456,6 +456,13 @@ public:
   static LookupTable dist_heuristic_lookup_table;
   static float size_lookup;
 
+  // Cache controls for distance heuristic lookup table
+  static bool dist_heuristic_lut_initialized;
+  static float cached_lookup_table_dim;
+  static unsigned int cached_dim_3_size;
+  static MotionModel cached_motion_model;
+  static float cached_min_turning_radius;
+
 private:
   float _cell_cost;
   float _accumulated_cost;

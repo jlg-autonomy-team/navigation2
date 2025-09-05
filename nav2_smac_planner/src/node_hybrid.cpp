@@ -42,6 +42,11 @@ LookupTable NodeHybrid::dist_heuristic_lookup_table;
 nav2_costmap_2d::Costmap2D * NodeHybrid::sampled_costmap = nullptr;
 CostmapDownsampler NodeHybrid::downsampler;
 ObstacleHeuristicQueue NodeHybrid::obstacle_heuristic_queue;
+bool NodeHybrid::dist_heuristic_lut_initialized = false;
+float NodeHybrid::cached_lookup_table_dim = 0.0f;
+unsigned int NodeHybrid::cached_dim_3_size = 0u;
+MotionModel NodeHybrid::cached_motion_model = MotionModel::UNKNOWN;
+float NodeHybrid::cached_min_turning_radius = 0.0f;
 
 // Each of these tables are the projected motion models through
 // time and space applied to the search on the current node in
@@ -618,6 +623,15 @@ void NodeHybrid::precomputeDistanceHeuristic(
   const unsigned int & dim_3_size,
   const SearchInfo & search_info)
 {
+  // Skip recomputation if inputs unchanged
+  const bool no_change = dist_heuristic_lut_initialized &&
+    cached_lookup_table_dim == lookup_table_dim &&
+    cached_dim_3_size == dim_3_size &&
+    cached_motion_model == motion_model &&
+    cached_min_turning_radius == search_info.minimum_turning_radius;
+  if (no_change) {
+    return;
+  }
   // Dubin or Reeds-Shepp shortest distances
   if (motion_model == MotionModel::DUBIN) {
     motion_table.state_space = std::make_unique<ompl::base::DubinsStateSpace>(
@@ -695,6 +709,13 @@ void NodeHybrid::precomputeDistanceHeuristic(
   for (auto &f : futures) {
     f.get();
   }
+
+  // Update cache
+  dist_heuristic_lut_initialized = true;
+  cached_lookup_table_dim = lookup_table_dim;
+  cached_dim_3_size = dim_3_size;
+  cached_motion_model = motion_model;
+  cached_min_turning_radius = search_info.minimum_turning_radius;
 }
 
 void NodeHybrid::getNeighbors(
