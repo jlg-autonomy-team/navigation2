@@ -43,6 +43,11 @@ LookupTable NodeHybrid::dist_heuristic_lookup_table;
 std::shared_ptr<nav2_costmap_2d::Costmap2DROS> NodeHybrid::costmap_ros = nullptr;
 
 ObstacleHeuristicQueue NodeHybrid::obstacle_heuristic_queue;
+bool NodeHybrid::dist_heuristic_lut_initialized = false;
+float NodeHybrid::cached_lookup_table_dim = 0.0f;
+unsigned int NodeHybrid::cached_dim_3_size = 0u;
+MotionModel NodeHybrid::cached_motion_model = MotionModel::UNKNOWN;
+float NodeHybrid::cached_min_turning_radius = 0.0f;
 
 // Each of these tables are the projected motion models through
 // time and space applied to the search on the current node in
@@ -788,6 +793,17 @@ void NodeHybrid::precomputeDistanceHeuristic(
   const unsigned int & dim_3_size,
   const SearchInfo & search_info)
 {
+  // Skip recomputation if inputs are unchanged. precomputeDistanceHeuristic may be
+  // re-invoked on dynamic parameter updates; avoid redundant work when nothing changed.
+  const bool no_change = dist_heuristic_lut_initialized &&
+    cached_lookup_table_dim == lookup_table_dim &&
+    cached_dim_3_size == dim_3_size &&
+    cached_motion_model == motion_model &&
+    cached_min_turning_radius == search_info.minimum_turning_radius;
+  if (no_change) {
+    return;
+  }
+
   // Dubin or Reeds-Shepp shortest distances
   if (motion_model == MotionModel::DUBIN) {
     motion_table.state_space = std::make_shared<ompl::base::DubinsStateSpace>(
@@ -801,35 +817,82 @@ void NodeHybrid::precomputeDistanceHeuristic(
             "with invalid motion model!");
   }
 
-  ompl::base::ScopedState<> from(motion_table.state_space), to(motion_table.state_space);
-  to[0] = 0.0;
-  to[1] = 0.0;
-  to[2] = 0.0;
   size_lookup = lookup_table_dim;
-  float motion_heuristic = 0.0;
-  unsigned int index = 0;
-  int dim_3_size_int = static_cast<int>(dim_3_size);
-  float angular_bin_size = 2 * M_PI / static_cast<float>(dim_3_size);
+  const float angular_bin_size = 2 * M_PI / static_cast<float>(dim_3_size);
 
   // Create a lookup table of Dubin/Reeds-Shepp distances in a window around the goal
   // to help drive the search towards admissible approaches. Deu to symmetries in the
   // Heuristic space, we need to only store 2 of the 4 quadrants and simply mirror
   // around the X axis any relative node lookup. This reduces memory overhead and increases
   // the size of a window a platform can store in memory.
-  dist_heuristic_lookup_table.resize(size_lookup * ceil(size_lookup / 2.0) * dim_3_size_int);
-  for (float x = ceil(-size_lookup / 2.0); x <= floor(size_lookup / 2.0); x += 1.0) {
-    for (float y = 0.0; y <= floor(size_lookup / 2.0); y += 1.0) {
-      for (int heading = 0; heading != dim_3_size_int; heading++) {
-        from[0] = x;
-        from[1] = y;
-        from[2] = heading * angular_bin_size;
-        motion_heuristic = motion_table.state_space->distance(from(), to());
-        dist_heuristic_lookup_table[index] = motion_heuristic;
-        index++;
+  const int size_x = static_cast<int>(size_lookup);
+  const int size_y = static_cast<int>(std::ceil(size_lookup / 2.0f));
+  const int size_theta = static_cast<int>(dim_3_size);
+
+  dist_heuristic_lookup_table.resize(size_x * size_y * size_theta);
+
+  // Each thread computes a disjoint range of headings, writing non-overlapping
+  // index ranges of the lookup table, so no synchronization is required.
+  auto compute = [&](int heading_start, int heading_end) {
+      ompl::base::ScopedState<> local_from(motion_table.state_space);
+      ompl::base::ScopedState<> local_to(motion_table.state_space);
+
+      local_to[0] = 0.0;
+      local_to[1] = 0.0;
+      local_to[2] = 0.0;
+
+      for (int h = heading_start; h < heading_end; ++h) {
+        for (int y = 0; y < size_y; ++y) {
+          for (int x = 0; x < size_x; ++x) {
+            float fx = static_cast<float>(x) - std::floor(size_lookup / 2.0f);
+            float fy = static_cast<float>(y);
+            float theta = h * angular_bin_size;
+
+            local_from[0] = fx;
+            local_from[1] = fy;
+            local_from[2] = theta;
+
+            float dist = motion_table.state_space->distance(local_from(), local_to());
+
+            size_t idx = static_cast<size_t>(x * size_y * size_theta + y * size_theta + h);
+            dist_heuristic_lookup_table[idx] = dist;
+          }
+        }
       }
-    }
+    };
+
+  // Launch threads, partitioning the heading dimension across hardware threads.
+  int num_threads = static_cast<int>(std::thread::hardware_concurrency());
+  if (num_threads < 1) {
+    num_threads = 1;
   }
+  num_threads = std::min(num_threads, std::max(size_theta, 1));
+  std::vector<std::future<void>> futures;
+  int headings_per_thread =
+    static_cast<int>(std::ceil(static_cast<float>(size_theta) / num_threads));
+
+  for (int i = 0; i < num_threads; ++i) {
+    int start = i * headings_per_thread;
+    int end = std::min(size_theta, (i + 1) * headings_per_thread);
+    if (start >= end) {
+      break;
+    }
+    futures.push_back(std::async(std::launch::async, compute, start, end));
+  }
+
+  // Wait for threads to complete
+  for (auto & f : futures) {
+    f.get();
+  }
+
+  // Update cache
+  dist_heuristic_lut_initialized = true;
+  cached_lookup_table_dim = lookup_table_dim;
+  cached_dim_3_size = dim_3_size;
+  cached_motion_model = motion_model;
+  cached_min_turning_radius = search_info.minimum_turning_radius;
 }
+
 
 void NodeHybrid::getNeighbors(
   std::function<bool(const uint64_t &,
