@@ -183,31 +183,6 @@ RouteServer::findPlanningDuration(const rclcpp::Time & start_time)
   return cycle_duration;
 }
 
-template<typename ActionT>
-bool
-RouteServer::isRequestValid(
-  std::shared_ptr<nav2_util::SimpleActionServer<ActionT>> & action_server)
-{
-  if (!action_server || !action_server->is_server_active()) {
-    RCLCPP_DEBUG(get_logger(), "Action server unavailable or inactive. Stopping.");
-    return false;
-  }
-
-  if (action_server->is_cancel_requested()) {
-    RCLCPP_INFO(get_logger(), "Goal was canceled. Canceling route planning action.");
-    action_server->terminate_all();
-    return false;
-  }
-
-  if (graph_.empty()) {
-    RCLCPP_INFO(get_logger(), "No graph set! Aborting request.");
-    action_server->terminate_current();
-    return false;
-  }
-
-  return true;
-}
-
 void RouteServer::populateActionResult(
   std::shared_ptr<ComputeRoute::Result> result,
   const Route & route,
@@ -399,17 +374,6 @@ void RouteServer::setRouteGraph(
   response->success = false;
 }
 
-template<typename GoalT>
-void RouteServer::exceptionWarning(
-  const std::shared_ptr<const GoalT> goal,
-  const std::exception & ex)
-{
-  RCLCPP_WARN(
-    get_logger(),
-    "Route server failed on request: Start: [(%0.2f, %0.2f) / %i] Goal: [(%0.2f, %0.2f) / %i]:"
-    " \"%s\"", goal->start.pose.position.x, goal->start.pose.position.y, goal->start_id,
-    goal->goal.pose.position.x, goal->goal.pose.position.y, goal->goal_id, ex.what());
-}
 
 }  // namespace nav2_route
 
