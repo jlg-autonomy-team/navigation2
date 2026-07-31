@@ -1,18 +1,53 @@
 cmake_minimum_required(VERSION 3.5)
 project(nav2_mppi_controller)
 
-add_definitions(-DXTENSOR_ENABLE_XSIMD)
-add_definitions(-DXTENSOR_USE_XSIMD)
+# ==============================================================================
+# Configurable Build Options
+# Overrides: colcon build --cmake-args -DWITH_OPENMP=ON -DWITH_XSIMD=ON
+# ==============================================================================
+option(WITH_XSIMD "Enable SIMD acceleration for xtensor via xsimd" ON)
+option(WITH_OPENMP "Enable OpenMP multi-threading" ON)
+option(WITH_TBB "Enable TBB multi-threading" OFF)
 
-set(XTENSOR_USE_TBB 0)
-set(XTENSOR_USE_OPENMP 0)
-set(XTENSOR_USE_XSIMD 1)
+# Configure SIMD / xsimd
+if(WITH_XSIMD)
+  add_compile_definitions(XTENSOR_ENABLE_XSIMD XTENSOR_USE_XSIMD)
+  find_package(xsimd REQUIRED)
+endif()
 
-# set(XTENSOR_DEFAULT_LAYOUT column_major)  # row_major, column_major
-# set(XTENSOR_DEFAULT_TRAVERSAL row_major)  # row_major, column_major
+# Configure OpenMP & handle xtensorTargets.cmake dependency
+if(WITH_OPENMP)
+  add_compile_definitions(XTENSOR_USE_OPENMP)
+  find_package(OpenMP REQUIRED)
+  if(NOT TARGET OpenMP::OpenMP_CXX_xtensor)
+    add_library(OpenMP::OpenMP_CXX_xtensor INTERFACE IMPORTED)
+    if(TARGET OpenMP::OpenMP_CXX)
+      set_target_properties(OpenMP::OpenMP_CXX_xtensor PROPERTIES
+        INTERFACE_LINK_LIBRARIES OpenMP::OpenMP_CXX
+      )
+    else()
+      set_target_properties(OpenMP::OpenMP_CXX_xtensor PROPERTIES
+        INTERFACE_COMPILE_OPTIONS "-qopenmp"
+        INTERFACE_LINK_LIBRARIES "-qopenmp"
+      )
+    endif()
+  endif()
+else()
+  # Stub target so system xtensorTargets.cmake won't fail if installed xtensor expects it
+  if(NOT TARGET OpenMP::OpenMP_CXX_xtensor)
+    add_library(OpenMP::OpenMP_CXX_xtensor INTERFACE IMPORTED)
+  endif()
+endif()
+
+# Configure TBB
+if(WITH_TBB)
+  add_compile_definitions(XTENSOR_USE_TBB)
+  find_package(TBB REQUIRED)
+endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(xsimd REQUIRED)
+
+
 find_package(xtensor REQUIRED)
 
 include_directories(
@@ -94,14 +129,37 @@ add_library(mppi_critics SHARED
 set(libraries mppi_controller mppi_critics)
 
 foreach(lib IN LISTS libraries)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Clang: use C++20 and optimization, omit -fconcepts
-    target_compile_features(${lib} PUBLIC cxx_std_20)
-  else()
-    target_compile_options(${lib} PUBLIC -fconcepts)
+  # Extract include directory from the target if set by find_package(xtensor)
+  if(TARGET xtensor)
+    get_target_property(XTENSOR_TARGET_INC xtensor INTERFACE_INCLUDE_DIRECTORIES)
   endif()
-  target_include_directories(${lib} PUBLIC ${xsimd_INCLUDE_DIRS})  #  ${OpenMP_INCLUDE_DIRS}
-  target_link_libraries(${lib} xtensor xtensor::optimize xtensor::use_xsimd)
+
+  # ✅ Include target property, all CMake variable variants, and system fallback
+  target_include_directories(${lib} PUBLIC
+    ${XTENSOR_INCLUDE_DIRS}
+    ${XTENSOR_INCLUDE_DIR}
+    ${xtensor_INCLUDE_DIR}
+    ${XTENSOR_TARGET_INC}
+    ${xsimd_INCLUDE_DIRS}
+    /usr/local/include
+  )
+  target_link_libraries(${lib} xtensor xtensor::optimize)
+  
+  # Conditionally link SIMD and parallelization targets
+  if(WITH_XSIMD)
+    target_include_directories(${lib} PUBLIC ${xsimd_INCLUDE_DIRS})
+    target_link_libraries(${lib} xtensor::use_xsimd)
+    target_compile_definitions(${lib} PRIVATE XSIMD_DEFAULT_ARCH=xsimd::avx2)
+  endif()
+
+  if(WITH_OPENMP)
+    target_link_libraries(${lib} OpenMP::OpenMP_CXX)
+  endif()
+
+  if(WITH_TBB)
+    target_link_libraries(${lib} TBB::tbb)
+  endif()
+  
   ament_target_dependencies(${lib} ${dependencies_pkgs})
 endforeach()
 
