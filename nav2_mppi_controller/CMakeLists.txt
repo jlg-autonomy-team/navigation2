@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.5)
 project(nav2_mppi_controller)
 
+list(REMOVE_ITEM CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "/usr/local/include")
+add_compile_options("-I/usr/local/include")
+
 # ==============================================================================
 # Configurable Build Options
 # Overrides: colcon build --cmake-args -DWITH_OPENMP=ON -DWITH_XSIMD=ON
@@ -52,6 +55,8 @@ find_package(xtensor REQUIRED)
 
 include_directories(
   include
+  /usr/local/include
+ 
 )
 
 set(dependencies_pkgs
