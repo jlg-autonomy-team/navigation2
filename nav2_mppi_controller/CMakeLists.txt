@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
 project(nav2_mppi_controller)
 
-list(REMOVE_ITEM CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "/usr/local/include")
-add_compile_options("-I/usr/local/include")
-
+# Avoid hard-coding /usr/local/include or mutating CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES.
+# Include directories should come from dependency targets (xtensor/xsimd/OpenMP/TBB) or target_include_directories().
 # ==============================================================================
 # Configurable Build Options
 # Overrides: colcon build --cmake-args -DWITH_OPENMP=ON -DWITH_XSIMD=ON
@@ -154,7 +153,9 @@ foreach(lib IN LISTS libraries)
   if(WITH_XSIMD)
     target_include_directories(${lib} PUBLIC ${xsimd_INCLUDE_DIRS})
     target_link_libraries(${lib} xtensor::use_xsimd)
-    target_compile_definitions(${lib} PRIVATE XSIMD_DEFAULT_ARCH=xsimd::avx2)
+    if(COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(${lib} PRIVATE XSIMD_DEFAULT_ARCH=xsimd::avx2)
+    endif()
   endif()
 
   if(WITH_OPENMP)
