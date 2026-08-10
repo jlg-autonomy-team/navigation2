@@ -192,7 +192,7 @@ TEST(SimpleProgressChecker, required_movement_radius) {
   // translation at required_movement_radius one axis
   EXPECT_FALSE(checkMacro(progress_checker, 0, 0, 0, radius, 0, 0, twice_time_allowance_ms));
   EXPECT_FALSE(checkMacro(progress_checker, 0, 0, 0, 0, radius, 0, twice_time_allowance_ms));
-  constexpr auto axis = radius / std::sqrt(2);
+  const auto axis = radius / std::sqrt(2.0);
   EXPECT_FALSE(checkMacro(progress_checker, 0, 0, 0, axis, axis, 0, twice_time_allowance_ms));
   // translation at required_movement_radius both axes
 
@@ -201,7 +201,7 @@ TEST(SimpleProgressChecker, required_movement_radius) {
   EXPECT_TRUE(checkMacro(progress_checker, 0, 0, 0, above, 0, 0, twice_time_allowance_ms));
   EXPECT_TRUE(checkMacro(progress_checker, 0, 0, 0, 0, above, 0, twice_time_allowance_ms));
   // translation at required_movement_radius both axes
-  constexpr auto above_axis = axis + std::numeric_limits<double>::epsilon();
+  const auto above_axis = axis + std::numeric_limits<double>::epsilon();
   EXPECT_TRUE(
     checkMacro(progress_checker, 0, 0, 0, above_axis, above_axis, 0, twice_time_allowance_ms));
 
