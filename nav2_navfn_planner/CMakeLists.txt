@@ -43,10 +43,20 @@ set(dependencies
   pluginlib
 )
 
-add_library(${library_name} SHARED
-  src/navfn_planner.cpp
+add_library(${library_name}_core SHARED
   src/navfn.cpp
 )
+add_library(${PROJECT_NAME}::${library_name}_core ALIAS ${library_name}_core)
+target_include_directories(${library_name}_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(${library_name}_core nav2_core rclcpp)
+
+add_library(${library_name} SHARED
+  src/navfn_planner.cpp
+)
+target_link_libraries(${library_name} ${library_name}_core)
 
 ament_target_dependencies(${library_name}
   ${dependencies}
@@ -55,6 +65,13 @@ ament_target_dependencies(${library_name}
 pluginlib_export_plugin_description_file(nav2_core global_planner_plugin.xml)
 
 install(TARGETS ${library_name}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(TARGETS ${library_name}_core
+  EXPORT export_${library_name}_core
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
@@ -77,5 +94,6 @@ endif()
 
 ament_export_include_directories(include)
 ament_export_libraries(${library_name})
+ament_export_targets(export_${library_name}_core HAS_LIBRARY_TARGET)
 ament_export_dependencies(${dependencies})
 ament_package()
