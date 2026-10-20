@@ -11,35 +11,37 @@ option(WITH_XSIMD "Enable SIMD acceleration for xtensor via xsimd" ON)
 option(WITH_OPENMP "Enable OpenMP multi-threading" ON)
 option(WITH_TBB "Enable TBB multi-threading" OFF)
 
-# Configure SIMD / xsimd
+
 if(WITH_XSIMD)
   add_compile_definitions(XTENSOR_ENABLE_XSIMD XTENSOR_USE_XSIMD)
   find_package(xsimd REQUIRED)
 endif()
 
-# Configure OpenMP & handle xtensorTargets.cmake dependency
-if(WITH_OPENMP)
-  add_compile_definitions(XTENSOR_USE_OPENMP)
-  find_package(OpenMP REQUIRED)
-  if(NOT TARGET OpenMP::OpenMP_CXX_xtensor)
-    add_library(OpenMP::OpenMP_CXX_xtensor INTERFACE IMPORTED)
-    if(TARGET OpenMP::OpenMP_CXX)
-      set_target_properties(OpenMP::OpenMP_CXX_xtensor PROPERTIES
-        INTERFACE_LINK_LIBRARIES OpenMP::OpenMP_CXX
-      )
-    else()
-      set_target_properties(OpenMP::OpenMP_CXX_xtensor PROPERTIES
-        INTERFACE_COMPILE_OPTIONS "-qopenmp"
-        INTERFACE_LINK_LIBRARIES "-qopenmp"
-      )
-    endif()
-  endif()
-else()
-  # Stub target so system xtensorTargets.cmake won't fail if installed xtensor expects it
-  if(NOT TARGET OpenMP::OpenMP_CXX_xtensor)
-    add_library(OpenMP::OpenMP_CXX_xtensor INTERFACE IMPORTED)
+# Ensure OpenMP target exists for xtensor export interface
+find_package(OpenMP QUIET)
+if(NOT TARGET OpenMP::OpenMP_CXX_xtensor)
+  add_library(OpenMP::OpenMP_CXX_xtensor INTERFACE IMPORTED)
+  if(TARGET OpenMP::OpenMP_CXX)
+    set_target_properties(OpenMP::OpenMP_CXX_xtensor PROPERTIES
+      INTERFACE_LINK_LIBRARIES OpenMP::OpenMP_CXX
+    )
+  else()
+    # If building with icpx/clang without standard OpenMP target
+    set_target_properties(OpenMP::OpenMP_CXX_xtensor PROPERTIES
+      INTERFACE_COMPILE_OPTIONS "-qopenmp"
+      INTERFACE_LINK_LIBRARIES "-qopenmp"
+    )
   endif()
 endif()
+
+find_package(xtensor REQUIRED)
+
+set(XTENSOR_USE_TBB 0)
+set(XTENSOR_USE_OPENMP 1)
+set(XTENSOR_USE_XSIMD 1)
+
+
+
 
 # Configure TBB
 if(WITH_TBB)
@@ -103,8 +105,9 @@ if(COMPILER_SUPPORTS_FMA)
   add_compile_options(-mfma)
 endif()
 
-# If building one the same hardware to be deployed on, try `-march=native`!
-# add_compile_options(-O3 -finline-limit=10000000 -ffp-contract=fast -ffast-math -mtune=generic)
+
+add_compile_options(-O3 -finline-limit=10000000 -mtune=native -march=native)
+
 
 add_library(mppi_controller SHARED
   src/controller.cpp
