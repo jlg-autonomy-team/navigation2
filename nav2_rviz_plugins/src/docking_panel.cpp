@@ -625,3 +625,7 @@ inline std::string DockingPanel::dockErrorToString(int16_t error_code)
 
 #include <pluginlib/class_list_macros.hpp>  // NOLINT
 PLUGINLIB_EXPORT_CLASS(nav2_rviz_plugins::DockingPanel, rviz_common::Panel)
+
+namespace nav2_rviz_plugins {
+void DockingPanel::onStartup() {}
+}

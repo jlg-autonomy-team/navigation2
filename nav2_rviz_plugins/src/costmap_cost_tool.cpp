@@ -128,3 +128,7 @@ void CostmapCostTool::handleGlobalCostResponse(
 
 #include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(nav2_rviz_plugins::CostmapCostTool, rviz_common::Tool)
+
+namespace nav2_rviz_plugins {
+void CostmapCostTool::updateAutoDeactivate() {}
+}
